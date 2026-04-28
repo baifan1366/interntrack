@@ -1,0 +1,136 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile information and role",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string" },
+        "name": { "type": "string" },
+        "role": { "type": "string", "enum": ["student", "supervisor", "coordinator"] }
+      },
+      "required": ["email", "role"]
+    },
+    "Student": {
+      "title": "Student",
+      "description": "Student specific academic data",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "programme": { "type": "string" },
+        "isEligible": { "type": "boolean" }
+      },
+      "required": ["userId", "programme", "isEligible"]
+    },
+    "Company": {
+      "title": "Company",
+      "description": "Information about industry partners",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "contactPerson": { "type": "string" },
+        "email": { "type": "string" },
+        "approved": { "type": "boolean" }
+      },
+      "required": ["name", "contactPerson", "email", "approved"]
+    },
+    "Placement": {
+      "title": "Placement",
+      "description": "Link between student and company for internship",
+      "type": "object",
+      "properties": {
+        "studentId": { "type": "string" },
+        "companyId": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected", "ongoing", "completed"] },
+        "startDate": { "type": "string", "format": "date-time" },
+        "endDate": { "type": "string", "format": "date-time" }
+      },
+      "required": ["studentId", "companyId", "status"]
+    },
+    "LogbookEntry": {
+      "title": "Logbook Entry",
+      "description": "Weekly internship logbook submission",
+      "type": "object",
+      "properties": {
+        "studentId": { "type": "string" },
+        "weekNumber": { "type": "integer" },
+        "content": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["studentId", "weekNumber", "content", "createdAt"]
+    },
+    "Report": {
+      "title": "Report",
+      "description": "Midterm or final internship report",
+      "type": "object",
+      "properties": {
+        "studentId": { "type": "string" },
+        "type": { "type": "string", "enum": ["midterm", "final"] },
+        "fileUrl": { "type": "string" },
+        "submittedAt": { "type": "string", "format": "date-time" },
+        "status": { "type": "string", "enum": ["pending", "approved", "revision"] }
+      },
+      "required": ["studentId", "type", "submittedAt", "status"]
+    },
+    "Evaluation": {
+      "title": "Evaluation",
+      "description": "Supervisor feedback for a student",
+      "type": "object",
+      "properties": {
+        "studentId": { "type": "string" },
+        "supervisorId": { "type": "string" },
+        "score": { "type": "integer" },
+        "feedback": { "type": "string" },
+        "submittedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["studentId", "supervisorId", "score", "submittedAt"]
+    },
+    "Notification": {
+      "title": "Notification",
+      "description": "User notification messages",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "title": { "type": "string" },
+        "message": { "type": "string" },
+        "read": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "title", "message", "read", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Global user profiles"
+    },
+    "/students/{studentId}": {
+      "schema": "Student",
+      "description": "Student details"
+    },
+    "/companies/{companyId}": {
+      "schema": "Company",
+      "description": "Company database"
+    },
+    "/placements/{placementId}": {
+      "schema": "Placement",
+      "description": "Internship placements"
+    },
+    "/logbooks/{logbookId}": {
+      "schema": "LogbookEntry",
+      "description": "Weekly logbooks"
+    },
+    "/reports/{reportId}": {
+      "schema": "Report",
+      "description": "Internship reports"
+    },
+    "/evaluations/{evaluationId}": {
+      "schema": "Evaluation",
+      "description": "Supervisor evaluations"
+    },
+    "/notifications/{notificationId}": {
+      "schema": "Notification",
+      "description": "User notifications"
+    }
+  }
+}

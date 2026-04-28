@@ -1,0 +1,105 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global Deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isEmailVerified() {
+      return request.auth.token.email_verified == true;
+    }
+
+    function getRole() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+    }
+
+    function isCoordinator() {
+      return isSignedIn() && getRole() == 'coordinator';
+    }
+
+    function isStudent() {
+      return isSignedIn() && getRole() == 'student';
+    }
+
+    function isSupervisor() {
+      return isSignedIn() && getRole() == 'supervisor';
+    }
+
+    function isValidId(id) {
+       return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // --- Users ---
+    match /users/{userId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && request.auth.uid == userId && (
+        incoming().role in ['student', 'supervisor', 'coordinator'] &&
+        incoming().email == request.auth.token.email
+      );
+      allow update: if isSignedIn() && request.auth.uid == userId && (
+         incoming().diff(existing()).affectedKeys().hasOnly(['name', 'role'])
+      );
+    }
+
+    // --- Students ---
+    match /students/{studentId} {
+      allow read: if isSignedIn() && (request.auth.uid == existing().userId || isCoordinator());
+      allow write: if isCoordinator();
+    }
+
+    // --- Companies ---
+    match /companies/{companyId} {
+      allow read: if isSignedIn();
+      allow write: if isCoordinator();
+    }
+
+    // --- Placements ---
+    match /placements/{placementId} {
+      allow read: if isSignedIn(); // Simplified for MVP, should be restricted to relevant parties
+      allow create: if isStudent() || isCoordinator();
+      allow update: if isCoordinator();
+    }
+
+    // --- Logbooks ---
+    match /logbooks/{logbookId} {
+      allow read: if isSignedIn();
+      allow create: if isStudent();
+      allow update: if isStudent() && request.auth.uid == existing().studentId;
+    }
+
+    // --- Reports ---
+    match /reports/{reportId} {
+      allow read: if isSignedIn();
+      allow create: if isStudent();
+      allow update: if isCoordinator() || (isStudent() && existing().status == 'revision');
+    }
+
+    // --- Evaluations ---
+    match /evaluations/{evaluationId} {
+      allow read: if isSignedIn();
+      allow create: if isSupervisor();
+      allow update: if isSupervisor();
+    }
+
+    // --- Notifications ---
+    match /notifications/{notificationId} {
+      allow read: if isSignedIn() && request.auth.uid == resource.data.userId;
+      allow update: if isSignedIn() && request.auth.uid == resource.data.userId && incoming().diff(existing()).affectedKeys().hasOnly(['read']);
+      allow create, delete: if isCoordinator(); // Coordinators send notifications
+    }
+  }
+}
