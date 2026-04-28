@@ -142,31 +142,38 @@ export default function App() {
           {newUserId ? (
             <div className="space-y-4">
               <p className="text-sm font-bold mono uppercase tracking-widest text-[#141414]/60">Select Your Role</p>
-              <div className="grid gap-2">
+              <div className="grid gap-3">
                 {(['student', 'coordinator', 'supervisor'] as UserRole[]).map(role => (
-                  <button 
+                  <motion.button 
                     key={role}
-                    onClick={() => registerUser(role)}
-                    className="w-full text-left p-4 border border-[#141414] hover:bg-[#141414] hover:text-white transition-all group"
+                    onClick={() => {
+                      console.log('Role clicked:', role);
+                      registerUser(role);
+                    }}
+                    whileHover={{ scale: 1.02, x: 4 }}
+                    whileTap={{ scale: 0.98 }}
+                    className="w-full text-left p-4 border border-[#141414] hover:bg-[#141414] hover:text-white transition-colors duration-200 group cursor-pointer shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] hover:shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]"
                   >
-                    <p className="font-bold uppercase tracking-widest text-xs group-hover:text-white/80">{role}</p>
-                    <p className="text-[10px] mt-1 opacity-60">
+                    <p className="font-bold uppercase tracking-widest text-xs group-hover:text-white">{role}</p>
+                    <p className="text-[10px] mt-1 opacity-60 group-hover:opacity-80">
                       {role === 'student' ? 'Access internships and submit logbooks' : 
                        role === 'coordinator' ? 'Manage placements and monitor compliance' : 
                        'Evaluate intern performance'}
                     </p>
-                  </button>
+                  </motion.button>
                 ))}
               </div>
             </div>
           ) : (
-            <button 
+            <motion.button 
               onClick={handleLogin}
-              className="w-full flex items-center justify-center gap-3 bg-[#141414] text-[#E4E3E0] py-4 px-6 font-bold hover:bg-gray-800 transition-colors"
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              className="w-full flex items-center justify-center gap-3 bg-[#141414] text-[#E4E3E0] py-4 px-6 font-bold hover:bg-gray-800 transition-colors shadow-[4px_4px_0px_0px_rgba(20,20,20,0.3)] hover:shadow-[2px_2px_0px_0px_rgba(20,20,20,0.3)]"
             >
               <LogIn size={20} />
               Continue with Google
-            </button>
+            </motion.button>
           )}
           
           <p className="mt-6 text-xs text-center text-gray-400 mono">
