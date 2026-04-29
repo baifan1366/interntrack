@@ -99,7 +99,8 @@ service cloud.firestore {
     match /notifications/{notificationId} {
       allow read: if isSignedIn() && request.auth.uid == resource.data.userId;
       allow update: if isSignedIn() && request.auth.uid == resource.data.userId && incoming().diff(existing()).affectedKeys().hasOnly(['read']);
-      allow create, delete: if isCoordinator(); // Coordinators send notifications
+      allow create: if isCoordinator() || (isSignedIn() && request.auth.uid == incoming().userId); // Coordinators or users creating their own notifications
+      allow delete: if isCoordinator();
     }
   }
 }
