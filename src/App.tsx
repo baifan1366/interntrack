@@ -57,22 +57,37 @@ export default function App() {
   const [newUserId, setNewUserId] = useState<string | null>(null);
   const [newUserEmail, setNewUserEmail] = useState('');
   const [newUserName, setNewUserName] = useState('');
+  const [selectedRole, setSelectedRole] = useState<UserRole | null>(null);
+  const [studentCredits, setStudentCredits] = useState('');
+  const [studentGPA, setStudentGPA] = useState('');
 
-  const registerUser = async (role: UserRole) => {
-    if (!newUserId) return;
+  const registerUser = async () => {
+    if (!newUserId || !selectedRole) return;
+    
+    // Validate student data if role is student
+    if (selectedRole === 'student') {
+      const credits = parseFloat(studentCredits);
+      const gpa = parseFloat(studentGPA);
+      
+      if (isNaN(credits) || isNaN(gpa) || credits < 0 || gpa < 0 || gpa > 4.0) {
+        alert('Please enter valid credit hours (≥0) and GPA (0.0-4.0)');
+        return;
+      }
+    }
+    
     try {
       const newUser: UserProfile = {
         id: newUserId,
         email: newUserEmail,
         name: newUserName,
-        role: role
+        role: selectedRole
       };
       await setDoc(doc(db, 'users', newUserId), newUser);
       
-      if (role === 'student') {
-        const credits = 90; // Default test value
+      if (selectedRole === 'student') {
+        const credits = parseFloat(studentCredits);
         const required = 120;
-        const gpa = 3.2;
+        const gpa = parseFloat(studentGPA);
         const eligible = credits >= 80 && gpa >= 2.0;
 
         await addDoc(collection(db, 'students'), {
@@ -99,6 +114,9 @@ export default function App() {
 
       setUser(newUser);
       setNewUserId(null);
+      setSelectedRole(null);
+      setStudentCredits('');
+      setStudentGPA('');
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, 'users');
     }
@@ -141,28 +159,101 @@ export default function App() {
           
           {newUserId ? (
             <div className="space-y-4">
-              <p className="text-sm font-bold mono uppercase tracking-widest text-[#141414]/60">Select Your Role</p>
-              <div className="grid gap-3">
-                {(['student', 'coordinator', 'supervisor'] as UserRole[]).map(role => (
-                  <motion.button 
-                    key={role}
-                    onClick={() => {
-                      console.log('Role clicked:', role);
-                      registerUser(role);
-                    }}
-                    whileHover={{ scale: 1.02, x: 4 }}
-                    whileTap={{ scale: 0.98 }}
-                    className="w-full text-left p-4 border border-[#141414] hover:bg-[#141414] hover:text-white transition-colors duration-200 group cursor-pointer shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] hover:shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]"
+              {!selectedRole ? (
+                <>
+                  <p className="text-sm font-bold mono uppercase tracking-widest text-[#141414]/60">Select Your Role</p>
+                  <div className="grid gap-3">
+                    {(['student', 'coordinator', 'supervisor'] as UserRole[]).map(role => (
+                      <motion.button 
+                        key={role}
+                        onClick={() => setSelectedRole(role)}
+                        whileHover={{ scale: 1.02, x: 4 }}
+                        whileTap={{ scale: 0.98 }}
+                        className="w-full text-left p-4 border border-[#141414] hover:bg-[#141414] hover:text-white transition-colors duration-200 group cursor-pointer shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] hover:shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]"
+                      >
+                        <p className="font-bold uppercase tracking-widest text-xs group-hover:text-white">{role}</p>
+                        <p className="text-[10px] mt-1 opacity-60 group-hover:opacity-80">
+                          {role === 'student' ? 'Access internships and submit logbooks' : 
+                           role === 'coordinator' ? 'Manage placements and monitor compliance' : 
+                           'Evaluate intern performance'}
+                        </p>
+                      </motion.button>
+                    ))}
+                  </div>
+                </>
+              ) : selectedRole === 'student' ? (
+                <>
+                  <button 
+                    onClick={() => setSelectedRole(null)}
+                    className="text-xs text-gray-500 hover:text-gray-700 mb-2 flex items-center gap-1"
                   >
-                    <p className="font-bold uppercase tracking-widest text-xs group-hover:text-white">{role}</p>
-                    <p className="text-[10px] mt-1 opacity-60 group-hover:opacity-80">
-                      {role === 'student' ? 'Access internships and submit logbooks' : 
-                       role === 'coordinator' ? 'Manage placements and monitor compliance' : 
-                       'Evaluate intern performance'}
-                    </p>
+                    ← Back to role selection
+                  </button>
+                  <p className="text-sm font-bold mono uppercase tracking-widest text-[#141414]/60">Student Information</p>
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-[10px] font-bold uppercase tracking-widest text-gray-500 mono mb-2">
+                        Credit Hours Earned
+                      </label>
+                      <input 
+                        type="number"
+                        value={studentCredits}
+                        onChange={(e) => setStudentCredits(e.target.value)}
+                        placeholder="e.g. 90"
+                        min="0"
+                        step="1"
+                        className="w-full bg-gray-50 border border-[#141414] p-3 text-sm outline-none"
+                      />
+                      <p className="text-[9px] text-gray-400 mt-1 mono">Minimum 80 credits required for internship</p>
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold uppercase tracking-widest text-gray-500 mono mb-2">
+                        Current CGPA
+                      </label>
+                      <input 
+                        type="number"
+                        value={studentGPA}
+                        onChange={(e) => setStudentGPA(e.target.value)}
+                        placeholder="e.g. 3.50"
+                        min="0"
+                        max="4.0"
+                        step="0.01"
+                        className="w-full bg-gray-50 border border-[#141414] p-3 text-sm outline-none"
+                      />
+                      <p className="text-[9px] text-gray-400 mt-1 mono">Scale: 0.00 - 4.00 (Minimum 2.00 required)</p>
+                    </div>
+                    <motion.button 
+                      onClick={registerUser}
+                      whileHover={{ scale: 1.02 }}
+                      whileTap={{ scale: 0.98 }}
+                      disabled={!studentCredits || !studentGPA}
+                      className="w-full bg-[#141414] text-white py-4 font-bold uppercase tracking-widest hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-[4px_4px_0px_0px_rgba(20,20,20,0.3)]"
+                    >
+                      Complete Registration
+                    </motion.button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <button 
+                    onClick={() => setSelectedRole(null)}
+                    className="text-xs text-gray-500 hover:text-gray-700 mb-2 flex items-center gap-1"
+                  >
+                    ← Back to role selection
+                  </button>
+                  <p className="text-sm font-bold mono uppercase tracking-widest text-[#141414]/60">
+                    Confirm Registration as {selectedRole}
+                  </p>
+                  <motion.button 
+                    onClick={registerUser}
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    className="w-full bg-[#141414] text-white py-4 font-bold uppercase tracking-widest hover:bg-gray-800 transition-all shadow-[4px_4px_0px_0px_rgba(20,20,20,0.3)]"
+                  >
+                    Complete Registration
                   </motion.button>
-                ))}
-              </div>
+                </>
+              )}
             </div>
           ) : (
             <motion.button 

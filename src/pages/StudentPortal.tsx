@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { collection, query, where, getDocs, addDoc, serverTimestamp, doc, updateDoc, orderBy, onSnapshot } from 'firebase/firestore';
 import { UserProfile, Placement, LogbookEntry, Company, StudentData, Notification, Report } from '../types';
-import { Briefcase, Calendar, CheckSquare, Plus, Send, AlertCircle, FileUp, History, Bell, Check, X, FileText } from 'lucide-react';
+import { Briefcase, Calendar, CheckSquare, Plus, Send, AlertCircle, FileUp, History, Bell, Check, X, FileText, Edit } from 'lucide-react';
 import { format } from 'date-fns';
 import { DashboardSkeleton } from '../components/Skeleton';
 
@@ -22,6 +22,9 @@ export default function StudentPortal({ tab, user }: { tab: string, user: UserPr
   const [reportUrl, setReportUrl] = useState('');
   const [reportType, setReportType] = useState<'midterm' | 'final'>('midterm');
   const [selectedCompanyId, setSelectedCompanyId] = useState('');
+  const [isEditingInfo, setIsEditingInfo] = useState(false);
+  const [editCredits, setEditCredits] = useState('');
+  const [editGPA, setEditGPA] = useState('');
 
   useEffect(() => {
     let unsubNotifications: () => void;
@@ -148,6 +151,40 @@ export default function StudentPortal({ tab, user }: { tab: string, user: UserPr
     }
   };
 
+  const handleUpdateStudentInfo = async () => {
+    if (!studentData) return;
+    
+    const credits = parseFloat(editCredits);
+    const gpa = parseFloat(editGPA);
+    
+    if (isNaN(credits) || isNaN(gpa) || credits < 0 || gpa < 0 || gpa > 4.0) {
+      alert('Please enter valid credit hours (≥0) and GPA (0.0-4.0)');
+      return;
+    }
+    
+    const eligible = credits >= 80 && gpa >= 2.0;
+    
+    try {
+      await updateDoc(doc(db, 'students', studentData.id), {
+        creditsEarned: credits,
+        gpa: gpa,
+        isEligible: eligible
+      });
+      
+      setStudentData({
+        ...studentData,
+        creditsEarned: credits,
+        gpa: gpa,
+        isEligible: eligible
+      });
+      
+      setIsEditingInfo(false);
+      alert('Student information updated successfully.');
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, 'students');
+    }
+  };
+
   if (loading) return <DashboardSkeleton />;
 
   if (tab === 'dashboard') {
@@ -179,19 +216,81 @@ export default function StudentPortal({ tab, user }: { tab: string, user: UserPr
         <div className="grid grid-cols-2 gap-8">
           {/* Eligibility Specs */}
           <div className="bg-white border border-[#141414] p-6 shadow-[4px_4px_0px_0px_rgba(20,20,20,1)]">
-             <h3 className="font-bold flex items-center gap-2 mb-4">
-              <CheckSquare size={18} /> Eligibility Parameters
-             </h3>
-             <div className="space-y-4">
-               <ProgressBar label="Credits Earned" current={studentData?.creditsEarned || 0} target={studentData?.requiredCredits || 120} />
-               <ProgressBar label="Current GPA" current={studentData?.gpa || 0} target={4.0} isGPA />
-               <div className="pt-2 flex items-center gap-2">
-                 <div className={`w-3 h-3 rounded-full ${studentData?.isEligible ? 'bg-green-500' : 'bg-red-500'}`} />
-                 <span className="text-xs font-bold mono uppercase">
-                  {studentData?.isEligible ? 'Technically Qualified' : 'Qualification Pending'}
-                 </span>
-               </div>
+             <div className="flex justify-between items-center mb-4">
+               <h3 className="font-bold flex items-center gap-2">
+                 <CheckSquare size={18} /> Eligibility Parameters
+               </h3>
+               {!isEditingInfo ? (
+                 <button 
+                   onClick={() => {
+                     setIsEditingInfo(true);
+                     setEditCredits(studentData?.creditsEarned.toString() || '');
+                     setEditGPA(studentData?.gpa.toString() || '');
+                   }}
+                   className="text-[10px] font-bold uppercase tracking-widest text-blue-600 hover:text-blue-800 underline"
+                 >
+                   Edit
+                 </button>
+               ) : (
+                 <button 
+                   onClick={() => setIsEditingInfo(false)}
+                   className="text-[10px] font-bold uppercase tracking-widest text-gray-500 hover:text-gray-700"
+                 >
+                   Cancel
+                 </button>
+               )}
              </div>
+             
+             {!isEditingInfo ? (
+               <div className="space-y-4">
+                 <ProgressBar label="Credits Earned" current={studentData?.creditsEarned || 0} target={studentData?.requiredCredits || 120} />
+                 <ProgressBar label="Current GPA" current={studentData?.gpa || 0} target={4.0} isGPA />
+                 <div className="pt-2 flex items-center gap-2">
+                   <div className={`w-3 h-3 rounded-full ${studentData?.isEligible ? 'bg-green-500' : 'bg-red-500'}`} />
+                   <span className="text-xs font-bold mono uppercase">
+                    {studentData?.isEligible ? 'Technically Qualified' : 'Qualification Pending'}
+                   </span>
+                 </div>
+               </div>
+             ) : (
+               <div className="space-y-4">
+                 <div>
+                   <label className="block text-[10px] font-bold uppercase tracking-widest text-gray-500 mono mb-2">
+                     Credit Hours Earned
+                   </label>
+                   <input 
+                     type="number"
+                     value={editCredits}
+                     onChange={(e) => setEditCredits(e.target.value)}
+                     min="0"
+                     step="1"
+                     className="w-full bg-gray-50 border border-[#141414] p-2 text-sm outline-none"
+                   />
+                   <p className="text-[9px] text-gray-400 mt-1 mono">Required: 80 / {studentData?.requiredCredits || 120}</p>
+                 </div>
+                 <div>
+                   <label className="block text-[10px] font-bold uppercase tracking-widest text-gray-500 mono mb-2">
+                     Current CGPA
+                   </label>
+                   <input 
+                     type="number"
+                     value={editGPA}
+                     onChange={(e) => setEditGPA(e.target.value)}
+                     min="0"
+                     max="4.0"
+                     step="0.01"
+                     className="w-full bg-gray-50 border border-[#141414] p-2 text-sm outline-none"
+                   />
+                   <p className="text-[9px] text-gray-400 mt-1 mono">Scale: 0.00 - 4.00 (Minimum 2.00)</p>
+                 </div>
+                 <button 
+                   onClick={handleUpdateStudentInfo}
+                   className="w-full bg-[#141414] text-white py-3 font-bold text-xs uppercase tracking-widest hover:bg-gray-800 transition-all"
+                 >
+                   Save Changes
+                 </button>
+               </div>
+             )}
           </div>
 
           {/* Action Center - Offer Management */}
