@@ -393,6 +393,150 @@ export default function StudentPortal({ tab, user }: { tab: string, user: UserPr
     );
   }
 
+  if (tab === 'applications') {
+    return (
+      <div className="space-y-8">
+        <header>
+          <h2 className="text-3xl font-bold italic serif">Placement Applications.</h2>
+          <p className="text-gray-500 text-sm mt-1 mono uppercase tracking-widest">Browse companies and submit applications</p>
+        </header>
+
+        {/* Current Placement Status */}
+        {placement && (
+          <div className={`p-6 border-2 ${
+            placement.status === 'ongoing' ? 'border-green-500 bg-green-50' :
+            placement.status === 'approved' ? 'border-blue-500 bg-blue-50' :
+            placement.status === 'pending' ? 'border-orange-500 bg-orange-50' :
+            'border-gray-300 bg-gray-50'
+          }`}>
+            <div className="flex items-start justify-between">
+              <div>
+                <span className={`text-[8px] font-black uppercase px-2 py-1 ${
+                  placement.status === 'ongoing' ? 'bg-green-600 text-white' :
+                  placement.status === 'approved' ? 'bg-blue-600 text-white' :
+                  placement.status === 'pending' ? 'bg-orange-600 text-white' :
+                  'bg-gray-600 text-white'
+                }`}>
+                  {placement.status}
+                </span>
+                <h3 className="font-bold text-lg mt-2">
+                  {companies.find(c => c.id === placement.companyId)?.name || 'Company'}
+                </h3>
+                <p className="text-xs text-gray-600 mt-1">
+                  {placement.status === 'pending' && 'Your application is under review by the coordinator.'}
+                  {placement.status === 'approved' && 'Congratulations! Your placement has been approved. Accept the offer to begin.'}
+                  {placement.status === 'ongoing' && `Internship started on ${format(new Date(placement.startDate || placement.createdAt), 'PP')}`}
+                  {placement.status === 'rejected' && 'This placement was not approved. You may apply to other companies.'}
+                </p>
+              </div>
+              {placement.status === 'approved' && (
+                <div className="flex gap-2">
+                  <button 
+                    onClick={() => handlePlacementAction('ongoing')}
+                    className="bg-green-600 text-white px-4 py-2 text-xs font-bold uppercase hover:bg-green-700 transition-all flex items-center gap-1"
+                  >
+                    <Check size={14} /> Accept
+                  </button>
+                  <button 
+                    onClick={() => handlePlacementAction('rejected')}
+                    className="border border-gray-300 text-gray-700 px-4 py-2 text-xs font-bold uppercase hover:bg-gray-100 transition-all flex items-center gap-1"
+                  >
+                    <X size={14} /> Decline
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Eligibility Check */}
+        {!studentData?.isEligible && (
+          <div className="bg-red-50 border-2 border-red-500 p-6">
+            <div className="flex items-start gap-3">
+              <AlertCircle size={24} className="text-red-600 flex-shrink-0" />
+              <div>
+                <h3 className="font-bold text-red-900">Not Eligible for Placement</h3>
+                <p className="text-sm text-red-700 mt-1">
+                  You must meet the minimum requirements (80+ credits and 2.0+ GPA) before applying for internships.
+                  Please check your dashboard for current progress.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Application Form - Only show if eligible and no active placement */}
+        {studentData?.isEligible && !placement && (
+          <div className="bg-white border border-[#141414] p-8 shadow-[4px_4px_0px_0px_rgba(20,20,20,1)]">
+            <h3 className="font-bold flex items-center gap-2 mb-6">
+              <Plus size={18} /> Submit New Application
+            </h3>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-widest text-gray-500 mono mb-2">
+                  Select Company
+                </label>
+                <select 
+                  value={selectedCompanyId}
+                  onChange={(e) => setSelectedCompanyId(e.target.value)}
+                  className="w-full bg-gray-50 border border-[#141414] p-3 text-sm outline-none"
+                >
+                  <option value="">-- Choose a company --</option>
+                  {companies.map(company => (
+                    <option key={company.id} value={company.id}>
+                      {company.name} - {company.industry}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <button 
+                onClick={handleApply}
+                disabled={!selectedCompanyId}
+                className="w-full bg-[#141414] text-white py-4 font-black text-xs uppercase tracking-widest hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2"
+              >
+                <Send size={16} /> Submit Application
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Available Companies List */}
+        <div>
+          <h3 className="font-bold text-xs uppercase tracking-widest mono text-gray-400 mb-4">
+            Available Companies ({companies.length})
+          </h3>
+          <div className="grid grid-cols-2 gap-6">
+            {companies.map(company => (
+              <div key={company.id} className="bg-white border border-gray-200 p-6 hover:border-[#141414] transition-all">
+                <div className="flex items-start justify-between mb-3">
+                  <div>
+                    <h4 className="font-bold text-lg">{company.name}</h4>
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mono">
+                      {company.industry}
+                    </span>
+                  </div>
+                  <Briefcase size={20} className="text-gray-400" />
+                </div>
+                <p className="text-xs text-gray-600 leading-relaxed mb-4">
+                  {company.description || 'Leading company in the industry offering comprehensive internship programs.'}
+                </p>
+                <div className="flex items-center gap-2 text-[10px] text-gray-500 mono">
+                  <span>📍 {company.location || 'Multiple Locations'}</span>
+                </div>
+              </div>
+            ))}
+            {companies.length === 0 && (
+              <div className="col-span-2 py-20 text-center border-2 border-dashed border-gray-100 text-gray-300">
+                <Briefcase size={40} className="mx-auto mb-2 opacity-20" />
+                <p className="italic serif">No companies available at the moment.</p>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (tab === 'notifications') {
     return (
       <div className="max-w-2xl mx-auto space-y-6">
