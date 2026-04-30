@@ -13,7 +13,7 @@ import { auth, db, handleFirestoreError, OperationType } from './lib/firebase';
 import { onAuthStateChanged, signInWithPopup, GoogleAuthProvider, signOut } from 'firebase/auth';
 import { doc, getDoc, setDoc, addDoc, collection } from 'firebase/firestore';
 import { UserProfile, UserRole } from './types';
-import { LogIn, LogOut, LayoutDashboard, Briefcase, FileText, CheckCircle, Bell, User as UserIcon } from 'lucide-react';
+import { LogIn, LogOut, LayoutDashboard, Briefcase, FileText, CheckCircle, Bell, User as UserIcon, MessageSquare } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 // Pages - define them locally or imported if complex
@@ -26,7 +26,7 @@ import { DashboardSkeleton, SidebarSkeleton } from './components/Skeleton';
 export default function App() {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'applications' | 'logbook' | 'reports' | 'notifications'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'applications' | 'logbook' | 'reports' | 'notifications' | 'partners' | 'chat'>('dashboard');
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
@@ -310,6 +310,28 @@ export default function App() {
               />
               <NavItem 
                 icon={<CheckCircle size={18} />} 
+                label="Reports" 
+                active={activeTab === 'reports'} 
+                onClick={() => setActiveTab('reports')} 
+              />
+              <NavItem 
+                icon={<MessageSquare size={18} />} 
+                label="Chat" 
+                active={activeTab === 'chat'} 
+                onClick={() => setActiveTab('chat')} 
+              />
+            </>
+          )}
+          {user.role === 'coordinator' && (
+            <>
+              <NavItem 
+                icon={<Briefcase size={18} />} 
+                label="Partners" 
+                active={activeTab === 'partners'} 
+                onClick={() => setActiveTab('partners')} 
+              />
+              <NavItem 
+                icon={<FileText size={18} />} 
                 label="Reports" 
                 active={activeTab === 'reports'} 
                 onClick={() => setActiveTab('reports')} 

@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { collection, query, where, getDocs, addDoc, serverTimestamp, doc, updateDoc, orderBy, onSnapshot } from 'firebase/firestore';
-import { UserProfile, Placement, LogbookEntry, Company, StudentData, Notification, Report } from '../types';
-import { Briefcase, Calendar, CheckSquare, Plus, Send, AlertCircle, FileUp, History, Bell, Check, X, FileText, Edit } from 'lucide-react';
+import { UserProfile, Placement, LogbookEntry, Company, StudentData, Notification, Report, Message } from '../types';
+import { Briefcase, Calendar, CheckSquare, Plus, Send, AlertCircle, FileUp, History, Bell, Check, X, FileText, Edit, MessageSquare } from 'lucide-react';
 import { format } from 'date-fns';
 import { DashboardSkeleton } from '../components/Skeleton';
 
@@ -13,6 +13,8 @@ export default function StudentPortal({ tab, user }: { tab: string, user: UserPr
   const [companies, setCompanies] = useState<Company[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [reports, setReports] = useState<Report[]>([]);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [supervisor, setSupervisor] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
 
   // Form states
@@ -25,9 +27,11 @@ export default function StudentPortal({ tab, user }: { tab: string, user: UserPr
   const [isEditingInfo, setIsEditingInfo] = useState(false);
   const [editCredits, setEditCredits] = useState('');
   const [editGPA, setEditGPA] = useState('');
+  const [messageContent, setMessageContent] = useState('');
 
   useEffect(() => {
     let unsubNotifications: () => void;
+    let unsubMessages: () => void;
     
     const fetchData = async () => {
       setLoading(true);
@@ -44,7 +48,26 @@ export default function StudentPortal({ tab, user }: { tab: string, user: UserPr
           const placementQuery = query(collection(db, 'placements'), where('studentId', '==', sId));
           const placementSnap = await getDocs(placementQuery);
           if (!placementSnap.empty) {
-            setPlacement({ id: placementSnap.docs[0].id, ...placementSnap.docs[0].data() } as Placement);
+            const placementData = { id: placementSnap.docs[0].id, ...placementSnap.docs[0].data() } as Placement;
+            setPlacement(placementData);
+            
+            // Fetch supervisor if assigned
+            if (placementData.supervisorId) {
+              const supervisorSnap = await getDocs(query(collection(db, 'users'), where('__name__', '==', placementData.supervisorId)));
+              if (!supervisorSnap.empty) {
+                setSupervisor({ id: supervisorSnap.docs[0].id, ...supervisorSnap.docs[0].data() } as UserProfile);
+              }
+              
+              // Real-time messages listener
+              const messagesQuery = query(
+                collection(db, 'messages'), 
+                where('placementId', '==', placementData.id),
+                orderBy('createdAt', 'asc')
+              );
+              unsubMessages = onSnapshot(messagesQuery, (snapshot) => {
+                setMessages(snapshot.docs.map(d => ({ id: d.id, ...d.data() }) as Message));
+              });
+            }
           }
 
           // Logbooks listener
@@ -74,7 +97,10 @@ export default function StudentPortal({ tab, user }: { tab: string, user: UserPr
     };
 
     fetchData();
-    return () => unsubNotifications?.();
+    return () => {
+      unsubNotifications?.();
+      unsubMessages?.();
+    };
   }, [user.id]);
 
   const handleApply = async () => {
@@ -106,11 +132,16 @@ export default function StudentPortal({ tab, user }: { tab: string, user: UserPr
   };
 
   const handleSubmitLogbook = async () => {
-    if (!studentData || !logbookContent) return;
+    if (!studentData || !logbookContent || !placement || placement.status !== 'ongoing') return;
+    
+    const startDate = new Date(placement.startDate || placement.createdAt);
+    const currentDate = new Date();
+    const weeksPassed = Math.floor((currentDate.getTime() - startDate.getTime()) / (7 * 24 * 60 * 60 * 1000)) + 1;
+    
     try {
       await addDoc(collection(db, 'logbooks'), {
         studentId: studentData.id,
-        weekNumber: logbooks.length + 1,
+        weekNumber: weeksPassed,
         content: logbookContent,
         fileUrl: fileUrl || null,
         createdAt: new Date().toISOString(),
@@ -119,6 +150,12 @@ export default function StudentPortal({ tab, user }: { tab: string, user: UserPr
       });
       setLogbookContent('');
       setFileUrl('');
+      
+      // Refresh logbooks
+      const logbookQuery = query(collection(db, 'logbooks'), where('studentId', '==', studentData.id), orderBy('createdAt', 'desc'));
+      const logbookSnap = await getDocs(logbookQuery);
+      setLogbooks(logbookSnap.docs.map(d => ({ id: d.id, ...d.data() }) as LogbookEntry));
+      
       alert("Logbook entry secured.");
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, 'logbooks');
@@ -152,7 +189,10 @@ export default function StudentPortal({ tab, user }: { tab: string, user: UserPr
   };
 
   const handleUpdateStudentInfo = async () => {
-    if (!studentData) return;
+    if (!studentData) {
+      alert('Student data not found. Please refresh the page.');
+      return;
+    }
     
     const credits = parseFloat(editCredits);
     const gpa = parseFloat(editGPA);
@@ -165,6 +205,8 @@ export default function StudentPortal({ tab, user }: { tab: string, user: UserPr
     const eligible = credits >= 80 && gpa >= 2.0;
     
     try {
+      console.log('Updating student info:', { studentId: studentData.id, credits, gpa, eligible });
+      
       await updateDoc(doc(db, 'students', studentData.id), {
         creditsEarned: credits,
         gpa: gpa,
@@ -181,7 +223,28 @@ export default function StudentPortal({ tab, user }: { tab: string, user: UserPr
       setIsEditingInfo(false);
       alert('Student information updated successfully.');
     } catch (error) {
+      console.error('Error updating student info:', error);
       handleFirestoreError(error, OperationType.UPDATE, 'students');
+    }
+  };
+
+  const handleSendMessage = async () => {
+    if (!messageContent.trim() || !placement) return;
+    
+    try {
+      await addDoc(collection(db, 'messages'), {
+        placementId: placement.id,
+        senderId: user.id,
+        senderName: user.name,
+        senderRole: user.role,
+        content: messageContent.trim(),
+        createdAt: new Date().toISOString(),
+        read: false
+      });
+      
+      setMessageContent('');
+    } catch (error) {
+      handleFirestoreError(error, OperationType.CREATE, 'messages');
     }
   };
 
@@ -320,48 +383,85 @@ export default function StudentPortal({ tab, user }: { tab: string, user: UserPr
   }
 
   if (tab === 'logbook') {
+    const isInternshipActive = placement && placement.status === 'ongoing';
+    const startDate = isInternshipActive ? new Date(placement.startDate || placement.createdAt) : null;
+    const currentDate = new Date();
+    const currentWeek = startDate ? Math.floor((currentDate.getTime() - startDate.getTime()) / (7 * 24 * 60 * 60 * 1000)) + 1 : 0;
+    
     return (
       <div className="space-y-8">
         <header>
           <h2 className="text-3xl font-bold italic serif">Professional Logbook.</h2>
+          {isInternshipActive && startDate && (
+            <div className="mt-2 flex items-center gap-4 text-sm">
+              <span className="text-gray-500 mono">
+                Internship Started: <span className="font-bold text-[#141414]">{format(startDate, 'PPP')}</span>
+              </span>
+              <span className="text-gray-500 mono">
+                Current Week: <span className="font-bold text-[#141414]">Week {currentWeek}</span>
+              </span>
+            </div>
+          )}
         </header>
 
-        <div className="bg-white border border-[#141414] p-8 shadow-[4px_4px_0px_0px_rgba(20,20,20,1)]">
-           <div className="flex justify-between items-end mb-4">
-             <h4 className="text-sm font-bold">Week {logbooks.length + 1} Continuous Journaling</h4>
-             <span className="text-[10px] text-gray-400 mono">SERVER TIME RECORDED</span>
-           </div>
-           <textarea 
-            value={logbookContent}
-            onChange={(e) => setLogbookContent(e.target.value)}
-            placeholder="Document daily tasks, technical hurdles, and breakthroughs..."
-            className="w-full h-40 bg-gray-50 border border-[#141414] p-4 text-sm focus:ring-0 outline-none resize-none font-sans leading-relaxed"
-           />
-           <div className="mt-4 flex items-center gap-4">
-              <div className="flex-1 relative">
-                <input 
-                  type="text" 
-                  value={fileUrl}
-                  onChange={(e) => setFileUrl(e.target.value)}
-                  placeholder="Link artifacts (GitHub, Figma, Docs)..."
-                  className="w-full bg-gray-50 border border-[#141414] p-2 pl-8 text-xs outline-none"
-                />
-                <FileUp size={14} className="absolute left-2 top-2.5 text-gray-400" />
+        {!isInternshipActive && (
+          <div className="bg-orange-50 border-2 border-orange-500 p-6">
+            <div className="flex items-start gap-3">
+              <AlertCircle size={24} className="text-orange-600 flex-shrink-0" />
+              <div>
+                <h3 className="font-bold text-orange-900">Logbook Access Restricted</h3>
+                <p className="text-sm text-orange-700 mt-1">
+                  {!placement && 'You need an approved placement before you can start logging your internship activities.'}
+                  {placement && placement.status === 'pending' && 'Your placement application is pending approval. Logbook access will be enabled once your internship begins.'}
+                  {placement && placement.status === 'approved' && 'Your placement has been approved! Accept the offer from the Placements tab to begin your internship and unlock logbook access.'}
+                  {placement && placement.status === 'rejected' && 'Your placement was not approved. Please apply to another company from the Placements tab.'}
+                  {placement && placement.status === 'completed' && 'Your internship has been completed. Logbook entries are now read-only.'}
+                </p>
               </div>
-              <button 
-                onClick={handleSubmitLogbook}
-                disabled={!placement || placement.status !== 'ongoing'}
-                className="bg-[#141414] text-white px-8 py-3 font-black text-xs uppercase tracking-widest hover:bg-gray-800 disabled:opacity-50 transition-all"
-              >
-                Seal Entry
-              </button>
-           </div>
-           {!placement || placement.status !== 'ongoing' && (
-             <p className="text-[10px] text-red-500 mt-2 mono font-bold">LOGGING IS ONLY PERMITTED DURING ACTIVE INTERNSHIP</p>
-           )}
-        </div>
+            </div>
+          </div>
+        )}
+
+        {isInternshipActive && (
+          <div className="bg-white border border-[#141414] p-8 shadow-[4px_4px_0px_0px_rgba(20,20,20,1)]">
+             <div className="flex justify-between items-end mb-4">
+               <h4 className="text-sm font-bold">Week {currentWeek} Continuous Journaling</h4>
+               <span className="text-[10px] text-gray-400 mono">SERVER TIME RECORDED</span>
+             </div>
+             <textarea 
+              value={logbookContent}
+              onChange={(e) => setLogbookContent(e.target.value)}
+              placeholder="Document daily tasks, technical hurdles, and breakthroughs..."
+              className="w-full h-40 bg-gray-50 border border-[#141414] p-4 text-sm focus:ring-0 outline-none resize-none font-sans leading-relaxed"
+             />
+             <div className="mt-4 flex items-center gap-4">
+                <div className="flex-1 relative">
+                  <input 
+                    type="text" 
+                    value={fileUrl}
+                    onChange={(e) => setFileUrl(e.target.value)}
+                    placeholder="Link artifacts (GitHub, Figma, Docs)..."
+                    className="w-full bg-gray-50 border border-[#141414] p-2 pl-8 text-xs outline-none"
+                  />
+                  <FileUp size={14} className="absolute left-2 top-2.5 text-gray-400" />
+                </div>
+                <button 
+                  onClick={handleSubmitLogbook}
+                  disabled={!logbookContent.trim()}
+                  className="bg-[#141414] text-white px-8 py-3 font-black text-xs uppercase tracking-widest hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                >
+                  Seal Entry
+                </button>
+             </div>
+          </div>
+        )}
 
         <div className="space-y-4">
+           {logbooks.length > 0 && (
+             <h3 className="font-bold text-xs uppercase tracking-widest mono text-gray-400">
+               Past Entries ({logbooks.length})
+             </h3>
+           )}
            {logbooks.map(entry => (
              <div key={entry.id} className="bg-white border border-gray-200 p-6 flex gap-6">
                 <div className="text-center">
@@ -382,6 +482,12 @@ export default function StudentPortal({ tab, user }: { tab: string, user: UserPr
                 </div>
              </div>
            ))}
+           {logbooks.length === 0 && isInternshipActive && (
+             <div className="py-20 text-center border-2 border-dashed border-gray-100 text-gray-300">
+                <FileText size={40} className="mx-auto mb-2 opacity-20" />
+                <p className="italic serif">No logbook entries yet. Start documenting your journey!</p>
+             </div>
+           )}
         </div>
       </div>
     );
@@ -632,6 +738,123 @@ export default function StudentPortal({ tab, user }: { tab: string, user: UserPr
             )}
           </div>
         </div>
+      </div>
+    );
+  }
+
+  if (tab === 'chat') {
+    return (
+      <div className="h-[calc(100vh-8rem)] flex flex-col">
+        <header className="mb-6">
+          <h2 className="text-3xl font-bold italic serif">Supervisor Chat.</h2>
+          {supervisor && (
+            <div className="mt-2 flex items-center gap-3">
+              <div className="w-8 h-8 bg-[#141414] text-white rounded-full flex items-center justify-center font-bold text-sm">
+                {supervisor.name.charAt(0)}
+              </div>
+              <div>
+                <p className="text-sm font-bold">{supervisor.name}</p>
+                <p className="text-[10px] text-gray-400 mono uppercase">Academic Supervisor</p>
+              </div>
+            </div>
+          )}
+        </header>
+
+        {!placement || !placement.supervisorId ? (
+          <div className="flex-1 flex items-center justify-center">
+            <div className="text-center max-w-md">
+              <MessageSquare size={48} className="mx-auto mb-4 text-gray-300" />
+              <h3 className="font-bold text-lg mb-2">No Supervisor Assigned</h3>
+              <p className="text-sm text-gray-500">
+                {!placement 
+                  ? 'You need an approved placement before you can chat with a supervisor.'
+                  : 'Your placement has been approved, but a supervisor has not been assigned yet. Please contact the coordinator.'}
+              </p>
+            </div>
+          </div>
+        ) : (
+          <>
+            {/* Messages Area */}
+            <div className="flex-1 bg-white border border-[#141414] shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] overflow-hidden flex flex-col">
+              <div className="p-4 border-b border-[#141414] bg-gray-50">
+                <p className="text-[10px] font-bold uppercase tracking-widest mono text-gray-500">
+                  Conversation History
+                </p>
+              </div>
+              
+              <div className="flex-1 overflow-y-auto p-6 space-y-4">
+                {messages.length === 0 ? (
+                  <div className="flex items-center justify-center h-full">
+                    <div className="text-center text-gray-400">
+                      <MessageSquare size={32} className="mx-auto mb-2 opacity-30" />
+                      <p className="text-sm italic">No messages yet. Start the conversation!</p>
+                    </div>
+                  </div>
+                ) : (
+                  messages.map((msg) => {
+                    const isOwnMessage = msg.senderId === user.id;
+                    return (
+                      <div key={msg.id} className={`flex ${isOwnMessage ? 'justify-end' : 'justify-start'}`}>
+                        <div className={`max-w-[70%] ${isOwnMessage ? 'order-2' : 'order-1'}`}>
+                          <div className="flex items-center gap-2 mb-1">
+                            {!isOwnMessage && (
+                              <div className="w-6 h-6 bg-gray-200 rounded-full flex items-center justify-center text-[10px] font-bold">
+                                {msg.senderName.charAt(0)}
+                              </div>
+                            )}
+                            <span className="text-[10px] font-bold text-gray-500 mono">
+                              {isOwnMessage ? 'You' : msg.senderName}
+                            </span>
+                            <span className="text-[9px] text-gray-400 mono">
+                              {format(new Date(msg.createdAt), 'MMM d, HH:mm')}
+                            </span>
+                          </div>
+                          <div className={`p-4 rounded-lg ${
+                            isOwnMessage 
+                              ? 'bg-[#141414] text-white' 
+                              : 'bg-gray-100 text-gray-900'
+                          }`}>
+                            <p className="text-sm leading-relaxed whitespace-pre-wrap">{msg.content}</p>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              {/* Message Input */}
+              <div className="p-4 border-t border-[#141414] bg-gray-50">
+                <div className="flex gap-3">
+                  <textarea
+                    value={messageContent}
+                    onChange={(e) => setMessageContent(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        handleSendMessage();
+                      }
+                    }}
+                    placeholder="Type your message... (Press Enter to send, Shift+Enter for new line)"
+                    className="flex-1 bg-white border border-[#141414] p-3 text-sm outline-none resize-none"
+                    rows={3}
+                  />
+                  <button
+                    onClick={handleSendMessage}
+                    disabled={!messageContent.trim()}
+                    className="bg-[#141414] text-white px-6 font-black text-xs uppercase tracking-widest hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center gap-2"
+                  >
+                    <Send size={16} />
+                    Send
+                  </button>
+                </div>
+                <p className="text-[9px] text-gray-400 mt-2 mono">
+                  Messages are visible to your supervisor and coordinator
+                </p>
+              </div>
+            </div>
+          </>
+        )}
       </div>
     );
   }

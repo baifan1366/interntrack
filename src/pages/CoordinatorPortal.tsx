@@ -19,6 +19,15 @@ export default function CoordinatorPortal({ tab, user }: { tab: string, user: Us
 
   // Filter states
   const [searchQuery, setSearchQuery] = useState('');
+  const [isAddingCompany, setIsAddingCompany] = useState(false);
+  const [newCompanyName, setNewCompanyName] = useState('');
+  const [newCompanyContact, setNewCompanyContact] = useState('');
+  const [newCompanyEmail, setNewCompanyEmail] = useState('');
+  const [newCompanyIndustry, setNewCompanyIndustry] = useState('');
+  const [newCompanyLocation, setNewCompanyLocation] = useState('');
+  const [newCompanyDescription, setNewCompanyDescription] = useState('');
+  const [selectedPlacementForApproval, setSelectedPlacementForApproval] = useState<string | null>(null);
+  const [selectedSupervisorId, setSelectedSupervisorId] = useState('');
 
   useEffect(() => {
     const fetchData = async () => {
@@ -50,13 +59,19 @@ export default function CoordinatorPortal({ tab, user }: { tab: string, user: Us
     fetchData();
   }, []);
 
-  const handleUpdatePlacementStatus = async (placementId: string, status: Placement['status']) => {
+  const handleUpdatePlacementStatus = async (placementId: string, status: Placement['status'], supervisorId?: string) => {
     try {
-      await updateDoc(doc(db, 'placements', placementId), { 
+      const updateData: any = { 
         status,
         offerDate: status === 'approved' ? new Date().toISOString() : null
-      });
-      setPlacements(prev => prev.map(p => p.id === placementId ? { ...p, status } : p));
+      };
+      
+      if (status === 'approved' && supervisorId) {
+        updateData.supervisorId = supervisorId;
+      }
+      
+      await updateDoc(doc(db, 'placements', placementId), updateData);
+      setPlacements(prev => prev.map(p => p.id === placementId ? { ...p, ...updateData } : p));
       
       const p = placements.find(x => x.id === placementId);
       const student = students.find(s => s.id === p?.studentId);
@@ -72,6 +87,10 @@ export default function CoordinatorPortal({ tab, user }: { tab: string, user: Us
           createdAt: new Date().toISOString()
         });
       }
+      
+      // Reset selection
+      setSelectedPlacementForApproval(null);
+      setSelectedSupervisorId('');
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, 'placements');
     }
@@ -96,6 +115,55 @@ export default function CoordinatorPortal({ tab, user }: { tab: string, user: Us
       }
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, 'reports');
+    }
+  };
+
+  const handleAddCompany = async () => {
+    if (!newCompanyName || !newCompanyContact || !newCompanyEmail) {
+      alert('Please fill in all required fields (Name, Contact Person, Email)');
+      return;
+    }
+
+    try {
+      const newCompany = {
+        name: newCompanyName,
+        contactPerson: newCompanyContact,
+        email: newCompanyEmail,
+        industry: newCompanyIndustry || 'Technology',
+        location: newCompanyLocation || 'Malaysia',
+        description: newCompanyDescription || '',
+        approved: true,
+        createdAt: new Date().toISOString()
+      };
+
+      const docRef = await addDoc(collection(db, 'companies'), newCompany);
+      setCompanies(prev => [...prev, { id: docRef.id, ...newCompany }]);
+      
+      // Reset form
+      setNewCompanyName('');
+      setNewCompanyContact('');
+      setNewCompanyEmail('');
+      setNewCompanyIndustry('');
+      setNewCompanyLocation('');
+      setNewCompanyDescription('');
+      setIsAddingCompany(false);
+      
+      alert('Company added successfully!');
+    } catch (error) {
+      handleFirestoreError(error, OperationType.CREATE, 'companies');
+    }
+  };
+
+  const handleDeleteCompany = async (companyId: string) => {
+    const company = companies.find(c => c.id === companyId);
+    if (!confirm(`Are you sure you want to remove ${company?.name}?`)) return;
+
+    try {
+      await updateDoc(doc(db, 'companies', companyId), { approved: false });
+      setCompanies(prev => prev.filter(c => c.id !== companyId));
+      alert('Company removed from system.');
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, 'companies');
     }
   };
 
@@ -151,6 +219,7 @@ export default function CoordinatorPortal({ tab, user }: { tab: string, user: Us
   if (tab === 'dashboard') {
     const atRisk = students.map(s => ({ ...s, risk: getRiskStatus(s.id) })).filter(s => s.risk !== null);
     const pendingPlacements = placements.filter(p => p.status === 'pending');
+    const supervisors = users.filter(u => u.role === 'supervisor');
 
     const statusData = [
       { name: 'Ongoing', value: placements.filter(p => p.status === 'ongoing').length, color: '#141414' },
@@ -257,31 +326,92 @@ export default function CoordinatorPortal({ tab, user }: { tab: string, user: Us
                   const s = students.find(x => x.id === p.studentId);
                   const u = users.find(x => x.id === s?.userId);
                   const c = companies.find(x => x.id === p.companyId);
+                  const isSelectingSupervisor = selectedPlacementForApproval === p.id;
+                  
                   return (
-                    <div key={p.id} className="p-4 flex justify-between items-center bg-white hover:bg-gray-50/50 transition-colors">
-                      <div className="flex gap-4 items-center">
-                        <div className="w-10 h-10 bg-gray-100 flex items-center justify-center font-bold text-gray-400">
-                          {u?.name.charAt(0)}
+                    <div key={p.id} className="p-4 bg-white hover:bg-gray-50/50 transition-colors">
+                      <div className="flex justify-between items-start">
+                        <div className="flex gap-4 items-center">
+                          <div className="w-10 h-10 bg-gray-100 flex items-center justify-center font-bold text-gray-400">
+                            {u?.name.charAt(0)}
+                          </div>
+                          <div>
+                            <p className="font-bold text-sm">{u?.name}</p>
+                            <p className="text-[10px] text-gray-400 mono uppercase">{c?.name}</p>
+                            {s && (
+                              <p className="text-[9px] text-gray-500 mono mt-1">
+                                Credits: {s.creditsEarned} | GPA: {s.gpa.toFixed(2)}
+                              </p>
+                            )}
+                          </div>
                         </div>
-                        <div>
-                          <p className="font-bold text-sm">{u?.name}</p>
-                          <p className="text-[10px] text-gray-400 mono uppercase">{c?.name}</p>
+                        
+                        {!isSelectingSupervisor ? (
+                          <div className="flex gap-3">
+                             <button 
+                               onClick={() => setSelectedPlacementForApproval(p.id)}
+                               className="text-[10px] font-black uppercase text-green-600 underline tracking-tighter hover:text-green-800"
+                              >
+                               Approve
+                             </button>
+                             <button 
+                               onClick={() => handleUpdatePlacementStatus(p.id, 'rejected')}
+                               className="text-[10px] font-black uppercase text-red-600 underline tracking-tighter hover:text-red-800"
+                             >
+                               Refuse
+                             </button>
+                          </div>
+                        ) : null}
+                      </div>
+                      
+                      {isSelectingSupervisor && (
+                        <div className="mt-4 p-4 bg-green-50 border border-green-200">
+                          <p className="text-[10px] font-bold uppercase tracking-widest text-green-900 mono mb-3">
+                            Assign Academic Supervisor
+                          </p>
+                          <div className="flex gap-3">
+                            <select 
+                              value={selectedSupervisorId}
+                              onChange={(e) => setSelectedSupervisorId(e.target.value)}
+                              className="flex-1 bg-white border border-[#141414] p-2 text-xs outline-none"
+                            >
+                              <option value="">-- Select Supervisor --</option>
+                              {supervisors.map(sup => (
+                                <option key={sup.id} value={sup.id}>
+                                  {sup.name} ({sup.email})
+                                </option>
+                              ))}
+                            </select>
+                            <button 
+                              onClick={() => {
+                                if (!selectedSupervisorId) {
+                                  alert('Please select a supervisor');
+                                  return;
+                                }
+                                handleUpdatePlacementStatus(p.id, 'approved', selectedSupervisorId);
+                              }}
+                              disabled={!selectedSupervisorId}
+                              className="bg-green-600 text-white px-4 py-2 text-[10px] font-black uppercase tracking-widest hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                            >
+                              Confirm
+                            </button>
+                            <button 
+                              onClick={() => {
+                                setSelectedPlacementForApproval(null);
+                                setSelectedSupervisorId('');
+                              }}
+                              className="border border-gray-300 text-gray-700 px-4 py-2 text-[10px] font-black uppercase tracking-widest hover:bg-gray-100 transition-all"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                          {supervisors.length === 0 && (
+                            <p className="text-[9px] text-orange-600 mt-2 mono">
+                              ⚠️ No supervisors registered in the system. Please add supervisors first.
+                            </p>
+                          )}
                         </div>
-                      </div>
-                      <div className="flex gap-3">
-                         <button 
-                           onClick={() => handleUpdatePlacementStatus(p.id, 'approved')}
-                           className="text-[10px] font-black uppercase text-green-600 underline tracking-tighter"
-                          >
-                           Approve
-                         </button>
-                         <button 
-                           onClick={() => handleUpdatePlacementStatus(p.id, 'rejected')}
-                           className="text-[10px] font-black uppercase text-red-600 underline tracking-tighter"
-                         >
-                           Refuse
-                         </button>
-                      </div>
+                      )}
                     </div>
                   );
                 })}
@@ -301,6 +431,7 @@ export default function CoordinatorPortal({ tab, user }: { tab: string, user: Us
                         <th className="p-4 font-bold uppercase mono text-[10px]">Student</th>
                         <th className="p-4 font-bold uppercase mono text-[10px]">Programme</th>
                         <th className="p-4 font-bold uppercase mono text-[10px]">Placement</th>
+                        <th className="p-4 font-bold uppercase mono text-[10px]">Supervisor</th>
                         <th className="p-4 font-bold uppercase mono text-[10px]">Status</th>
                       </tr>
                    </thead>
@@ -308,11 +439,15 @@ export default function CoordinatorPortal({ tab, user }: { tab: string, user: Us
                       {students.map(s => {
                         const u = users.find(x => x.id === s.userId);
                         const p = placements.find(x => x.studentId === s.id);
+                        const supervisor = p?.supervisorId ? users.find(x => x.id === p.supervisorId) : null;
                         return (
                           <tr key={s.id} className="hover:bg-gray-50/50">
                             <td className="p-4 font-bold">{u?.name}</td>
                             <td className="p-4 text-gray-500 uppercase tracking-tighter">{s.programme}</td>
                             <td className="p-4">{p ? companies.find(c => c.id === p.companyId)?.name : 'N/A'}</td>
+                            <td className="p-4 text-gray-600">
+                              {supervisor ? supervisor.name : (p?.status === 'approved' || p?.status === 'ongoing' ? '⚠️ Unassigned' : '-')}
+                            </td>
                             <td className="p-4">
                                <span className={`text-[10px] font-black uppercase mono px-2 py-0.5 rounded-full ${
                                  p?.status === 'ongoing' ? 'bg-green-100 text-green-700' : 
@@ -397,6 +532,108 @@ export default function CoordinatorPortal({ tab, user }: { tab: string, user: Us
           <p className="text-gray-500 text-sm mt-1 mono uppercase tracking-widest">Manage authorized training organizations</p>
         </header>
 
+        {/* Add Company Form */}
+        {isAddingCompany && (
+          <div className="bg-white border-2 border-[#141414] p-8 shadow-[8px_8px_0px_0px_rgba(20,20,20,1)]">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="font-bold text-lg">Add New Company</h3>
+              <button 
+                onClick={() => setIsAddingCompany(false)}
+                className="text-xs text-gray-500 hover:text-gray-700 underline"
+              >
+                Cancel
+              </button>
+            </div>
+            
+            <div className="grid grid-cols-2 gap-6">
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-widest text-gray-500 mono mb-2">
+                  Company Name *
+                </label>
+                <input 
+                  type="text"
+                  value={newCompanyName}
+                  onChange={(e) => setNewCompanyName(e.target.value)}
+                  placeholder="e.g. Google Malaysia"
+                  className="w-full bg-gray-50 border border-[#141414] p-3 text-sm outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-widest text-gray-500 mono mb-2">
+                  Industry
+                </label>
+                <input 
+                  type="text"
+                  value={newCompanyIndustry}
+                  onChange={(e) => setNewCompanyIndustry(e.target.value)}
+                  placeholder="e.g. Technology, Finance, Healthcare"
+                  className="w-full bg-gray-50 border border-[#141414] p-3 text-sm outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-widest text-gray-500 mono mb-2">
+                  Contact Person *
+                </label>
+                <input 
+                  type="text"
+                  value={newCompanyContact}
+                  onChange={(e) => setNewCompanyContact(e.target.value)}
+                  placeholder="e.g. John Doe"
+                  className="w-full bg-gray-50 border border-[#141414] p-3 text-sm outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-widest text-gray-500 mono mb-2">
+                  Email *
+                </label>
+                <input 
+                  type="email"
+                  value={newCompanyEmail}
+                  onChange={(e) => setNewCompanyEmail(e.target.value)}
+                  placeholder="e.g. hr@company.com"
+                  className="w-full bg-gray-50 border border-[#141414] p-3 text-sm outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-widest text-gray-500 mono mb-2">
+                  Location
+                </label>
+                <input 
+                  type="text"
+                  value={newCompanyLocation}
+                  onChange={(e) => setNewCompanyLocation(e.target.value)}
+                  placeholder="e.g. Kuala Lumpur, Malaysia"
+                  className="w-full bg-gray-50 border border-[#141414] p-3 text-sm outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-widest text-gray-500 mono mb-2">
+                  Description
+                </label>
+                <input 
+                  type="text"
+                  value={newCompanyDescription}
+                  onChange={(e) => setNewCompanyDescription(e.target.value)}
+                  placeholder="Brief description of the company"
+                  className="w-full bg-gray-50 border border-[#141414] p-3 text-sm outline-none"
+                />
+              </div>
+            </div>
+
+            <button 
+              onClick={handleAddCompany}
+              className="mt-6 w-full bg-[#141414] text-white py-4 font-black text-xs uppercase tracking-widest hover:bg-gray-800 transition-all"
+            >
+              Add Company to System
+            </button>
+          </div>
+        )}
+
         <div className="bg-white border border-[#141414] shadow-[4px_4px_0px_0px_rgba(20,20,20,1)]">
            <div className="p-4 border-b border-[#141414] bg-gray-50 flex justify-between items-center">
               <div className="relative w-72">
@@ -409,33 +646,61 @@ export default function CoordinatorPortal({ tab, user }: { tab: string, user: Us
                    className="w-full bg-white border border-gray-200 p-2 pl-9 text-xs outline-none focus:border-[#141414]"
                  />
               </div>
-              <button className="bg-[#141414] text-white px-4 py-2 text-[10px] font-black uppercase tracking-widest hover:bg-gray-800 transition-all flex items-center gap-2">
-                 <Plus size={14} /> Add Organization
+              <button 
+                onClick={() => setIsAddingCompany(true)}
+                className="bg-[#141414] text-white px-4 py-2 text-[10px] font-black uppercase tracking-widest hover:bg-gray-800 transition-all flex items-center gap-2"
+              >
+                 <Building2 size={14} /> Add Organization
               </button>
            </div>
            <div className="divide-y divide-gray-100">
               {companies.filter(c => c.name.toLowerCase().includes(searchQuery.toLowerCase())).map(company => (
                 <div key={company.id} className="p-4 flex justify-between items-center hover:bg-gray-50">
-                   <div>
-                      <h4 className="font-bold text-sm">{company.name}</h4>
-                      <div className="flex gap-4 mt-1">
-                         <span className="text-[10px] text-gray-400 mono">{company.contactPerson}</span>
-                         <span className="text-[10px] text-gray-400 mono">{company.email}</span>
+                   <div className="flex-1">
+                      <div className="flex items-center gap-3 mb-2">
+                        <h4 className="font-bold text-sm">{company.name}</h4>
+                        {company.approved && (
+                          <span className="text-[8px] font-black uppercase bg-green-100 text-green-700 px-2 py-0.5 mono">Active</span>
+                        )}
+                      </div>
+                      <div className="flex gap-6 text-[10px] text-gray-500">
+                         <span className="mono">👤 {company.contactPerson}</span>
+                         <span className="mono">✉️ {company.email}</span>
+                         {(company as any).industry && <span className="mono">🏢 {(company as any).industry}</span>}
+                         {(company as any).location && <span className="mono">📍 {(company as any).location}</span>}
                       </div>
                    </div>
                    <div className="flex items-center gap-4">
-                      {company.approved ? (
-                        <span className="text-[8px] font-black uppercase bg-green-100 text-green-700 px-2 py-0.5 mono">System Partner</span>
-                      ) : (
-                        <button className="text-[10px] font-bold underline uppercase tracking-tight text-blue-600">Approve</button>
-                      )}
-                      <button className="text-gray-300 hover:text-red-500 transition-colors">
-                         <XCircle size={16} />
+                      <button 
+                        onClick={() => handleDeleteCompany(company.id)}
+                        className="text-gray-300 hover:text-red-500 transition-colors"
+                      >
+                         <XCircle size={18} />
                       </button>
                    </div>
                 </div>
               ))}
+              {companies.length === 0 && (
+                <div className="py-20 text-center text-gray-300">
+                  <Building2 size={40} className="mx-auto mb-2 opacity-20" />
+                  <p className="italic serif">No companies in the system yet.</p>
+                  <button 
+                    onClick={() => setIsAddingCompany(true)}
+                    className="mt-4 text-xs font-bold underline text-blue-600"
+                  >
+                    Add your first company
+                  </button>
+                </div>
+              )}
            </div>
+        </div>
+
+        <div className="bg-blue-50 border border-blue-200 p-4 flex items-start gap-3">
+          <AlertTriangle size={20} className="text-blue-600 flex-shrink-0 mt-0.5" />
+          <div className="text-xs text-blue-800">
+            <p className="font-bold mb-1">Partner Management Guidelines</p>
+            <p>Only approved companies will be visible to students in the placement application system. Ensure all contact information is accurate before adding a company.</p>
+          </div>
         </div>
       </div>
     );

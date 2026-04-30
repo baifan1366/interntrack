@@ -22,13 +22,18 @@ export interface Company {
   name: string;
   contactPerson: string;
   email: string;
+  industry?: string;
+  location?: string;
+  description?: string;
   approved: boolean;
+  createdAt?: string;
 }
 
 export interface Placement {
   id: string;
   studentId: string;
   companyId: string;
+  supervisorId?: string;
   status: 'pending' | 'approved' | 'rejected' | 'ongoing' | 'completed';
   offerDate?: string;
   startDate?: string;
@@ -83,4 +88,15 @@ export interface Report {
   submittedAt: string;
   status: 'pending' | 'approved' | 'revision';
   feedback?: string;
+}
+
+export interface Message {
+  id: string;
+  placementId: string;
+  senderId: string;
+  senderName: string;
+  senderRole: UserRole;
+  content: string;
+  createdAt: string;
+  read: boolean;
 }
